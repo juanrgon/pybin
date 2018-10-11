@@ -55,10 +55,10 @@ def main():
             for pr in user.prs:
                 combined_status = pr.combined_status
                 print(f"{Status.colored(combined_status)}: {pr.branch} {crayons.magenta(pr.url)}")
-                if combined_status == 'failure':
+                if combined_status != 'success':
                     for status in pr.statuses:
-                        if status.state == 'failure':
-                            print(f'    {crayons.red(status.target_url)}')
+                        if status.state != 'success':
+                            print(f'    {Status.colored(status.state)}: {crayons.magenta(status.target_url)}')
 
             for seconds_remaining in countdown(30):
                 with clear_line_on_enter():
