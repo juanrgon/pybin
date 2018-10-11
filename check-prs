@@ -1,0 +1,163 @@
+#!/Users/juangonzalez/.pyenv/versions/pybin/bin/python
+import re
+from pathlib import PosixPath
+from typing import List
+from enum import Enum
+import sys
+import crayons
+
+import delegator
+import yaml
+from github import Commit
+from github import Github as GithubClient
+from github import PullRequest, Repository
+from contextlib import contextmanager
+
+from time import sleep
+
+HUB_CONFIG_PATH = PosixPath("~/.config/hub").expanduser()
+
+
+@contextmanager
+def clear_terminal_on_enter():
+    print("\033[H\033[J")
+    yield
+
+
+@contextmanager
+def clear_line_on_enter():
+    sys.stdout.write("\033[K")
+    yield
+
+
+def countdown(seconds):
+    for i in range(seconds, 0, -1):
+        yield i
+        sleep(1)
+
+
+class Status(Enum):
+    success = "green"
+    pending = "yellow"
+    failure = "red"
+
+    @classmethod
+    def colored(cls, status: str):
+        color = cls[status].value
+        return getattr(crayons, color)(status)
+
+
+def main():
+    user = GithubUser.load()
+
+    while True:
+        with clear_terminal_on_enter():
+            for pr in user.prs:
+                print(f"{Status.colored(pr.status)}: {pr.branch} {crayons.magenta(pr.url)}")
+
+            for seconds_remaining in countdown(30):
+                with clear_line_on_enter():
+                    print(f"Refreshing in {seconds_remaining}", end="\r")
+
+
+class GithubUser:
+    def __init__(self, username: str, client: GithubClient) -> None:
+        self.username = username
+        self.client = client
+        self._prs = None
+
+    @classmethod
+    def load(cls):
+        with HUB_CONFIG_PATH.open() as config_file:
+            config_contents = config_file.read()
+        config = yaml.load(config_contents)
+        github_config = config["github.com"][0]
+        client = GithubClient(github_config["oauth_token"])
+        return cls(github_config["user"], client)
+
+    @property
+    def prs(self):
+        if self._prs is None:
+            self._prs = []
+            repo = Repo.load(self.client)
+            for pr in PR.load_user_prs(self, repo):
+                yield pr
+                self._prs.append(pr)
+        else:
+            for pr in self._prs:
+                yield pr
+
+
+class PR:
+    def __init__(self, pull_request: PullRequest) -> None:
+        self.pull_request = pull_request
+        self._last_commit = None
+        self._status = None
+
+    @classmethod
+    def load_user_prs(cls, user: GithubUser, repo: Repository):
+        for pr in repo.prs:
+            last_commit = pr.last_commit
+            if (
+                pr.assignee == user
+                or pr.author.login == user.username
+                or getattr(last_commit.author, "login", None) == user.username
+            ):
+                yield pr
+
+    @property
+    def assignee(self):
+        return self.pull_request.assignee
+
+    @property
+    def author(self):
+        return self.pull_request.user
+
+    @property
+    def last_commit(self) -> Commit:
+        return [_ for _ in self.pull_request.get_commits()][-1]
+
+    @property
+    def title(self):
+        return self.pull_request.title
+
+    @property
+    def status(self):
+        return self.last_commit.get_combined_status().state
+
+    @property
+    def url(self):
+        return self.pull_request.html_url
+
+    @property
+    def branch(self):
+        return self.pull_request.head.ref
+
+class Repo:
+    def __init__(self, repo: Repository) -> None:
+        self.repo = repo
+
+    @staticmethod
+    def parse_url(url):
+        url = url.strip()
+        ssh_regex = r"git@github.com\:(?P<name>\S+)\.git"
+        return re.match(ssh_regex, url).group("name")
+
+    @classmethod
+    def load(cls, client: GithubClient):
+        remote_url = delegator.run("git remote get-url origin").out
+        repo_name = cls.parse_url(remote_url)
+        repo = client.get_repo(repo_name)
+        return cls(repo)
+
+    @property
+    def prs(self):
+        for pr in self.repo.get_pulls():
+            yield PR(pr)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
