@@ -53,7 +53,12 @@ def main():
     while True:
         with clear_terminal_on_enter():
             for pr in user.prs:
-                print(f"{Status.colored(pr.status)}: {pr.branch} {crayons.magenta(pr.url)}")
+                combined_status = pr.combined_status
+                print(f"{Status.colored(combined_status)}: {pr.branch} {crayons.magenta(pr.url)}")
+                if combined_status == 'failure':
+                    for status in pr.statuses:
+                        if status.state == 'failure':
+                            print(f'    {crayons.red(status.target_url)}')
 
             for seconds_remaining in countdown(30):
                 with clear_line_on_enter():
@@ -122,8 +127,12 @@ class PR:
         return self.pull_request.title
 
     @property
-    def status(self):
+    def combined_status(self):
         return self.last_commit.get_combined_status().state
+
+    @property
+    def statuses(self):
+        return self.last_commit.get_combined_status().statuses
 
     @property
     def url(self):
@@ -132,6 +141,7 @@ class PR:
     @property
     def branch(self):
         return self.pull_request.head.ref
+
 
 class Repo:
     def __init__(self, repo: Repository) -> None:
