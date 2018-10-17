@@ -1,7 +1,6 @@
 #!/Users/juangonzalez/.pyenv/versions/pybin/bin/python
 import re
 from pathlib import PosixPath
-from typing import List
 from enum import Enum
 import sys
 import crayons
@@ -12,6 +11,7 @@ from github import Commit
 from github import Github as GithubClient
 from github import PullRequest, Repository
 from contextlib import contextmanager
+from pyautogui import hotkey
 
 from time import sleep
 
@@ -20,7 +20,7 @@ HUB_CONFIG_PATH = PosixPath("~/.config/hub").expanduser()
 
 @contextmanager
 def clear_terminal_on_enter():
-    print("\033[H\033[J")
+    hotkey('command', 'k')
     yield
 
 
